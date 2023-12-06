@@ -1,46 +1,81 @@
+import copy
 import random
 from random import randrange
 import time
 import tkinter as tk
+from Cluster import Cluster
 
 
 def random_start_points(amount):
     for x in range(amount):
-        coor = [randrange(-5000, 5000), randrange(-5000, 5000)]
-        while coor in start_points_arr:  # avoid duplicates
-            coor = [randrange(-5000, 5000), randrange(-5000, 5000)]
-        start_points_arr.append(coor)
-        all_points_arr.append(coor)
-        print(x + 1, start_points_arr[x])
+        coor = (randrange(-5000, 5000), randrange(-5000, 5000))
+        while coor in start_clusters:                                            # avoid duplicates
+            coor = (randrange(-5000, 5000), randrange(-5000, 5000))
+
+        cluster = Cluster([coor], coor)                                          # Cluster Object (points), center point
+
+        start_clusters.append(cluster)                                                          # save starting points
+        all_clusters.append(cluster)                                                            # add them to all points
+        print(x + 1, start_clusters[x].center_point, start_clusters[x].coors)
 
 
 def generate_all_points(amount):
     for i in range(amount):
-        point = random.choice(all_points_arr)                                   # choose random point to add offset to
-
+        point = random.choice(all_clusters)                                       # choose random point to add offset to
         used_offset = offset
-        if abs(point[0]) > 5000 - offset or abs(point[1]) > 5000 - offset:
-            used_offset = 50                                                    # lower offset when near edge
+
+      #  if abs(point[0]) > 5000 - offset or abs(point[1]) > 5000 - offset:                 # lower offset when near edge
+       #     used_offset = 50
 
         x_offset, y_offset = randrange(-used_offset, used_offset), randrange(-used_offset, used_offset)  # random offset
-        new_point = [point[0] + x_offset, point[1] + y_offset]                              # add offset
+        new_coor = (point.center_point[0] + x_offset, point.center_point[1] + y_offset)                  # add offset
+        new_cluster = Cluster([new_coor], new_coor)
 
-        while new_point in all_points_arr:                                                  # avoid duplicates
+        while new_cluster in all_clusters:                                                            # avoid duplicates
             x_offset, y_offset = randrange(-used_offset, used_offset), randrange(-used_offset, used_offset) # new offset
-            new_point = [point[0] + x_offset, point[1] + y_offset]                          # add new random offset
+            new_coor = (point.center_point[0] + x_offset, point.center_point[1] + y_offset)                 # add offset
+            new_cluster = Cluster([new_coor], new_coor)
 
-        all_points_arr.append(new_point)                                                  # append to all points
+        all_clusters.append(new_cluster)                                                  # append to all points
 
-    for i in range(len(all_points_arr)):                                                    # print
-        print(f"{i+1} {all_points_arr[i]}")
+    for i in range(len(all_clusters)):                                                    # print
+        print(f"{i+1} {all_clusters[i].center_point}")
 
-    all_tuple_list = [[tuple(point)] for point in all_points_arr]      # needed the tuples in separate lists (clusters)
-    start_tuple_list = [[tuple(point)] for point in start_points_arr]
+    print("\nStarting points: ", len(start_clusters))
+    print("All points: ", len(all_clusters))
 
-    print("\nAll points: ", len(all_points_arr), "\n", all_tuple_list)
-    print("\nStarting points: ", len(start_points_arr), "\n", start_tuple_list)
+def dis_between_clusters(A, B):
+    center_of_A, center_of_B = A.center_point, B.center_point
+    distance = euclidean_distance(center_of_A, center_of_B)
+    return distance
 
-    return all_tuple_list
+def create_matrix(clusters):
+    dis_matrix = []
+    n  = len(clusters)
+
+    for i in range(n):
+        row = []
+        for j in range(n):
+            dis = dis_between_clusters(clusters[i], clusters[j])
+            row.append(dis)
+        dis_matrix.append(row)
+    return dis_matrix
+
+def clusters_to_merge(dis_matrix):      # gets closest clusters for merging
+    n = len(dis_matrix)
+    min1 = 0
+    min2 = 0
+    min_dis = float("inf")
+
+    for i in range(n):
+        row = dis_matrix[i]
+        for j in range(len(row)):
+            dis = row[j]
+            if dis != 0 and dis < min_dis:
+                min1 = i
+                min2 = j
+                min_dis = dis
+    return [min1, min2]
 
 
 def euclidean_distance(coor1, coor2):
@@ -49,12 +84,11 @@ def euclidean_distance(coor1, coor2):
     distance = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
     return distance
 
-
-def find_centroid(cluster):
+def find_centroid(cluster):         # centroid is not one of the points in the cluster but the center
     points = len(cluster)
 
-    # if points == 1:
-    #    return cluster[0]
+    if points == 1:                 # if cluster has only 1 point return it as centroid
+        return cluster[0]
 
     centroid_x = sum(x for x, y in cluster) / points
     centroid_y = sum(y for x, y in cluster) / points
@@ -64,160 +98,158 @@ def find_centroid(cluster):
 def total_distance(coor, cluster):   # Total distance between the point and all other points in the cluster
     return sum(euclidean_distance(coor, other_point) for other_point in cluster)
 
-
 def find_medoid(cluster):   # minimizes the sum of the distances between itself and all other points in the cluster
     medoid = cluster[0]
     total_dis_min = total_distance(medoid, cluster)
 
     for point in cluster:
         total_dis = total_distance(point, cluster)
-        if total_dis < total_dis_min:   # Update medoid if the total distance is smaller
+        if total_dis < total_dis_min:               # Update medoid if the total distance is smaller
             medoid = point
             total_dis_min = total_dis
     return medoid
 
 
-def merging_for_centroid(cluster_1, cluster_2):
-    centroid_1, centroid_2 = find_centroid(cluster_1), find_centroid(cluster_2)   # find the centroid of 2 clusters
-    merged_cluster = cluster_1 + cluster_2                                        # merge them
-    merged_centroid = ((centroid_1[0] + centroid_2[0]) / 2,                       # find new centroid X
-                       (centroid_1[1] + centroid_2[1]) / 2)                       # find new centroid Y
-    merged_cluster.append(merged_centroid)                                        # add as new point for representation
-    return merged_cluster
+def average_dis_in_cluster(cluster):
+    n = len(cluster.coors)
+    total_dis = sum(euclidean_distance(cluster.center_point, coor) for coor in cluster.coors)
+    average_dis = total_dis / n
+    return average_dis
+
+def still_OK_clusters(clusters):
+    global all_clusters
+    for i in clusters:
+        if average_dis_in_cluster(i) > max_average_dis:
+            print("Average distance of points from the center greater than 500!")
+            # all_clusters = copy.deepcopy(backup_clusters)
+            return False
+
+    return True
+
+def cluster_algo(dis_matrix, center):
+    save = None
+    saved_index = 0
+    last_center_point = find_centroid if center == "centroid" else find_medoid
+    # backup_clusters = copy.deepcopy(all_clusters)
+    while still_OK_clusters(all_clusters):
+        cluster_A_index, cluster_B_index = clusters_to_merge(dis_matrix)        # closest clusters
+
+        if cluster_A_index < cluster_B_index:
+            cluster_A_index, cluster_B_index = cluster_B_index, cluster_A_index
+
+        A = all_clusters[cluster_A_index]           # first cluster
+        B = all_clusters[cluster_B_index]           # second cluster
+
+        save = B                                    # Save where to split cluster at the end
+        saved_index = len(B.coors)
+
+        B.coors = [*A.coors, *B.coors]                  # MERGE
+        B.center_point = last_center_point(B.coors)     # recalculate center point
+        all_clusters.pop(cluster_A_index)       # remove old cluster
+        dis_matrix.pop(cluster_A_index)         # remove column
+        # dis_matrix.pop(cluster_B_index)         # remove column
+
+        # all_clusters.pop(cluster_B_index)       # remove old cluster
+
+        # find center point for new coors
+        # center_point = find_centroid(new_coors) if center == "centroid" else find_medoid(new_coors)
+
+        # new_C = Cluster(new_coors, center_point)    # new merged cluster
+        # all_clusters.append(new_C)                  # add new cluster
+        # new_row = []
+
+        for i in range(len(dis_matrix)):
+            row = dis_matrix[i]
+
+            if cluster_A_index < len(row):
+                row.pop(cluster_A_index)
+            # row.pop(cluster_B_index)
+
+            row[cluster_B_index] = dis_between_clusters(all_clusters[i], B)
+            # row.append(distance)
+            # new_row.append(distance)
+
+        # new_row.append(0)
+        # dis_matrix.append(new_row)
+
+        if len(all_clusters) % 25 == 0:
+            print(f"clusters: {len(all_clusters)}")
 
 
-def merging_for_medoid(cluster_1, cluster_2):
-    merged_cluster = cluster_1 + cluster_2                                        # merge them
-    merged_medoid = find_medoid(merged_cluster)                                   # find new medoid
-    merged_cluster.append(merged_medoid)                                          # add as new point for representation
-    return merged_cluster
+    # LAST MERGE SPLIT to 2 clusters and find their center points
+    new = save.coors[saved_index:]
+    new_center = last_center_point(new)
+
+    final_cluster = Cluster(new, new_center)        # create Cluster object
+    all_clusters.append(final_cluster)              # add to all clusters
+
+    save.coors = save.coors[:saved_index]
+    save.center_point = last_center_point(save.coors)
 
 
-# TODO distance matrix could improve speed so it calculates it only once
-def clustering(clusters, center, max_average_dis):
-    count = 1
-    while len(clusters) > 1:
-        min_dis = float("inf")                  # min distance -> infinity (to find a smaller later)
-        merge_these_clusters = (0, 0)           # merge these clusters
-
-        for i in range(len(clusters)):
-            for j in range(i + 1, len(clusters)):
-                if center == "centroid":
-                    distance = euclidean_distance(find_centroid(clusters[i]), find_centroid(clusters[j]))
-
-                    if distance < min_dis:
-                        min_dis = distance
-                        merge_these_clusters = (i, j)
-
-                elif center == "medoid":
-                    distance = euclidean_distance(find_medoid(clusters[i]), find_medoid(clusters[j]))
-
-                    if distance < min_dis:
-                        min_dis = distance
-                        merge_these_clusters = (i, j)
-
-        # MERGING
-        if center == "centroid":
-            print(count)
-            print(f"Cluster 1: {clusters[merge_these_clusters[0]]}")
-            print(f"Cluster 2: {clusters[merge_these_clusters[1]]}")
-
-            merged_cluster = merging_for_centroid(clusters[merge_these_clusters[0]], clusters[merge_these_clusters[1]])
-            clusters.pop(merge_these_clusters[1])
-            clusters[merge_these_clusters[0]] = merged_cluster
-            print(f"Merged Cluster: {merged_cluster}\n")
-
-        elif center == "medoid":
-            print(count)
-            print(f"Cluster 1: {clusters[merge_these_clusters[0]]}")
-            print(f"Cluster 2: {clusters[merge_these_clusters[1]]}")
-
-            merged_cluster = merging_for_medoid(clusters[merge_these_clusters[0]], clusters[merge_these_clusters[1]])
-            clusters.pop(merge_these_clusters[1])
-            clusters[merge_these_clusters[0]] = merged_cluster
-            print(f"Merged Cluster: {merged_cluster}\n")
-
-        for cluster in clusters:
-            total_dis = 0
-            if center == "centroid":
-                center_point = find_centroid(cluster)
-                for point in cluster:
-                    dis = euclidean_distance(point, center_point)
-                    total_dis += dis
-
-                average_distance = total_dis / len(cluster)
-                if average_distance > max_average_dis:
-                    print(f"\nAverage distance between clusters exceeded {max_average_dis}!")
-                    return clusters
-
-            elif center == "medoid":
-                center_point = find_medoid(cluster)
-                for point in cluster:
-                    dis = euclidean_distance(point, center_point)
-                    total_dis += dis
-
-                average_distance = total_dis / len(cluster)
-                if average_distance > max_average_dis:
-                    print(f"\nAverage distance between clusters exceeded {max_average_dis}!")
-                    return clusters
-
-        # print(f"Num of clusters: {len(clusters)}")
-        # print(f"Average Distance: {average_distance:.2f}\n")
-
-        count += 1
-
-    return clusters
-
-
-# VALUES #
-seed_value = 10
+# ########## VALUES ########## #
+seed_value = 6969
 random.seed(seed_value)
 
 start_points = 20
-start_points_arr = []
-all_points_for_centroid = 20_000        # 20 000
-all_points_for_medoid = 5000            # 5000
-all_points_arr = []
+start_clusters = []
+all_clusters = []
 
 offset = 100
 max_average_dis = 500
 
 
-# GUI #
+# ########## GUI ########## #
 def gui_for_clusters(root, clusters):
-    canvas = tk.Canvas(root, width=1000, height=1000, background="white")
-    canvas.pack()
+    canvas = tk.Canvas(root, width=600, height=600, background="white")
     cluster_colors = {idx: f'#{random.randint(0, 0xFFFFFF):06x}' for idx in range(len(clusters))}
+
     for idx, cluster in enumerate(clusters):
         color = cluster_colors[idx]
-        for point in cluster:
-            x, y = point
-            scaled_x = (x + 5000) / 10
-            scaled_y = (y + 5000) / 10
-            if point == cluster[:-1]:
-                canvas.create_oval(scaled_x, scaled_y, scaled_x + 5, scaled_y + 5, fill="black")
-            canvas.create_oval(scaled_x, scaled_y, scaled_x + 5, scaled_y + 5, fill=color)
 
+        for point in cluster.coors:
+            # points in clusters
+            x, y = point
+            scaled_x = (x + 5000) / 20
+            scaled_y = (y + 5000) / 20
+            canvas.create_oval(scaled_x, scaled_y, scaled_x + 5, scaled_y + 5, fill=color, width=0)
+
+        # center points of clusters
+        x, y = cluster.center_point
+        scaled_x = (x + 5000) / 20
+        scaled_y = (y + 5000) / 20
+        canvas.create_oval(scaled_x, scaled_y, scaled_x + 5, scaled_y + 5, fill="", width=1)
+
+    canvas.pack()
     root.mainloop()
 
 
-# START #
-while 1:
+# ########## START ########## #
+while True:
     choice = int(input("Choose center for clusters:\n ~ centroid 1\n ~ medoid 2\n ~~~ "))
     if choice == 1:
+        all_points_for_centroid = int(input("\nInput num of points: "))
+
         start_gen = time.time()
         print("\nStarting points:")
         random_start_points(start_points)
+
         print("\nGenerated points:")
-        clusters_C = generate_all_points(all_points_for_centroid)
+        generate_all_points(all_points_for_centroid)
         end_gen = time.time()
+
         print(f"\nGenerating time: {(end_gen - start_gen):.2f} s")
         print("-----------------------")
 
+        distance_matrix = create_matrix(all_clusters)
+        print("Distance Matrix calculated")
+
         print("\nClustering with centroid as middle:\n")
         start_algo = time.time()
-        algo = clustering(clusters_C, "centroid", max_average_dis)
-        print(f"Final cluster (centroid): {algo}\nNum of clusters: {len(algo)}")
+
+        cluster_algo(distance_matrix, "centroid")
+
+        print(f"Num of clusters: {len(all_clusters)}")
         end_algo = time.time()
         end_time = end_algo - start_algo
         print(f"\nClustering time for {all_points_for_centroid} points:\n"
@@ -226,27 +258,34 @@ while 1:
               f"~ {(end_time/60):.2f} m\n"
               f"~ {((end_time/60)/60):.2f} h\n")
 
-        for cluster in algo:                        # add centroid to color it differently in gui
-            center_p = find_centroid(cluster)
-            cluster.append(center_p)
-
+        # GUI
         root = tk.Tk()
-        gui_for_clusters(root, algo)
+        gui_for_clusters(root, all_clusters)
         break
 
     elif choice == 2:
+        all_points_for_medoid = int(input("\nInput num of points: "))
+
         start_gen = time.time()
+        print("\nStarting points:")
         random_start_points(start_points)
+
         print("\nGenerated points:")
-        clusters_M = generate_all_points(all_points_for_medoid)
+        generate_all_points(all_points_for_medoid)
         end_gen = time.time()
+
         print(f"\nGenerating time: {(end_gen - start_gen):.2f} s")
         print("-----------------------")
 
+        distance_matrix = create_matrix(all_clusters)
+        print("Distance Matrix calculated")
+
         print("\nClustering with medoid as middle:\n")
         start_algo = time.time()
-        algo_2 = clustering(clusters_M, "medoid", max_average_dis)
-        print(f"Final cluster (medoid): {algo_2}\nNum of clusters: {len(algo_2)}")
+
+        cluster_algo(distance_matrix, "medoid")
+
+        print(f"Num of clusters: {len(all_clusters)}")
         end_algo = time.time()
         end_time = end_algo - start_algo
         print(f"\nClustering time for {all_points_for_medoid} points:\n"
@@ -255,12 +294,9 @@ while 1:
               f"~ {(end_time/60):.2f} m\n"
               f"~ {((end_time/60)/60):.2f} h\n")
 
-        for cluster in algo_2:                              # add medoid to gui
-            center_p = find_centroid(cluster)
-            cluster.append(center_p)
-
+        # GUI
         root = tk.Tk()
-        gui_for_clusters(root, algo_2)
+        gui_for_clusters(root, all_clusters)
         break
 
     else:
